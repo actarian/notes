@@ -22,6 +22,7 @@
     "json-formatter": "^0.6.0",
     "dat.gui": "dat-gui#^0.6.5",
     "stats.js": "*",
-    "three.js": "threejs#*"
+    "three.js": "threejs#*",
+    "THREE.MeshLine": "^1.0.3"
   }
 }

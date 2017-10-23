@@ -55,7 +55,8 @@
 
     app.controller('RootCtrl', ['$scope', function($scope) {
         var analyser, analyserData, audio;
-        var stats, gui, scene, camera, controls, fov, ratio, near, far, shadow, back, light, renderer, container, width, height, w2, h2, mouse = { x: 0, y: 0 };
+        var stats, gui, scene, camera, fov, ratio, near, far, shadow, back, light, renderer, container, width, height, w2, h2, mouse = { x: 0, y: 0 };
+        var controls = null;
 
         var OBJECTS = {};
 
@@ -171,7 +172,104 @@
             container.appendChild(stats.dom);
 
             addListeners();
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            // controls = new THREE.OrbitControls(camera, renderer.domElement);
+        }
+
+        function createPath() {
+            var spline = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0, -40, -40),
+                new THREE.Vector3(0, 40, -40),
+                new THREE.Vector3(0, 140, -40),
+                new THREE.Vector3(0, 40, 40),
+                new THREE.Vector3(0, -40, 40)
+            ]);
+            spline.type = 'catmullrom';
+            spline.closed = true;
+
+            var object = new THREE.Object3D();
+            scene.add(object);
+
+            var extrusionSegments = 500;
+            var radiusSegments = 12;
+            var closed = true;
+            var normal = new THREE.Vector3();
+            var binormal = new THREE.Vector3();
+            var material = new THREE.MeshLambertMaterial({
+                color: 0xff00ff
+            });
+            var wireframeMaterial = new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                opacity: 0.3,
+                wireframe: true,
+                transparent: true,
+            });
+            var geometry = new THREE.TubeBufferGeometry(spline, extrusionSegments, 2, radiusSegments, closed);
+            // if (group !== undefined) {
+            //     object.remove(group);
+            //     group.children[0].geometry.dispose();
+            //     group.children[1].geometry.dispose();
+            // }            
+            var group = THREE.SceneUtils.createMultiMaterialObject(geometry, [material, wireframeMaterial]);
+            object.add(group);
+            /*
+            var geometry = new THREE.Geometry();
+            geometry.vertices = spline.getPoints(500);
+            var line = new MeshLine();
+            line.setGeometry(geometry);
+            // line.setGeometry( geometry, function( p ) { return 2; } ); // makes width 2 * lineWidth
+            // line.setGeometry( geometry, function( p ) { return 1 - p; } ); // makes width taper
+            // line.setGeometry( geometry, function( p ) { return 2 + Math.sin( 50 * p ); } ); // makes width sinusoidal
+            var material = new MeshLineMaterial({
+                color: new THREE.Color(0xffffff),
+                lineWidth: 4,
+            });
+            var mesh = new THREE.Mesh(line.geometry, material);
+            object.add(mesh);
+            */
+            return {
+                object: object,
+                geometry: geometry,
+                normal: normal,
+                binormal: binormal,
+            };
+        }
+
+        function moveCamera() {
+            if (!OBJECTS.path) {
+                return;
+            }
+            var duration = 20 * 1000;
+            var scale = 1;
+            var offset = 15;
+            var lookAhead = true;
+            var geometry = OBJECTS.path.geometry;
+            var normal = OBJECTS.path.normal;
+            var binormal = OBJECTS.path.binormal;
+            var msec = Date.now();
+            var pow = (msec % duration) / duration;
+            var p = geometry.parameters.path.getPointAt(pow);
+            p.multiplyScalar(scale);
+            // interpolation
+            var segments = geometry.tangents.length;
+            var progress = pow * segments;
+            var current = Math.floor(progress);
+            var next = (current + 1) % segments;
+            binormal.subVectors(geometry.binormals[next], geometry.binormals[current]);
+            binormal.multiplyScalar(progress - current).add(geometry.binormals[current]);
+            var dir = geometry.parameters.path.getTangentAt(pow);
+            normal.copy(binormal).cross(dir);
+            p.add(normal.clone().multiplyScalar(offset));
+            camera.position.copy(p);
+            var lookAt;
+            if (lookAhead) {
+                // using arclength for stablization in look ahead
+                lookAt = geometry.parameters.path.getPointAt((pow + 30 / geometry.parameters.path.getLength()) % 1).multiplyScalar(scale);
+            } else {
+                // camera orientation 2 - up orientation via normal
+                lookAt = new THREE.Vector3().copy(p).add(dir);
+            }
+            camera.matrix.lookAt(camera.position, lookAt, normal);
+            camera.rotation.setFromRotationMatrix(camera.matrix, camera.rotation.order);
         }
 
         function animateVertexAtIndex(v, i, d) {
@@ -529,6 +627,7 @@
             OBJECTS.lines = getObjectLines();
             OBJECTS.circles = getObjectCircles();
             // OBJECTS.notes = getNotes();
+            OBJECTS.path = createPath();
         }
 
         function createAnalyser() {
@@ -581,6 +680,7 @@
             if (controls) {
                 controls.update();
             }
+            // moveCamera();
             updateAnalyser();
             renderer.render(scene, camera);
         }
@@ -686,12 +786,14 @@
                 camera.updateProjectionMatrix();
             }
             window.addEventListener('resize', onWindowResize, false);
+            /*
             document.addEventListener('mousemove', handleMouseMove, false);
             document.addEventListener('mousedown', handleMouseDown, false);
             document.addEventListener('mouseup', handleMouseUp, false);
             document.addEventListener('touchstart', handleTouchStart, false);
             document.addEventListener('touchend', handleTouchEnd, false);
             document.addEventListener('touchmove', handleTouchMove, false);
+            */
         }
 
         function getSprite() {
