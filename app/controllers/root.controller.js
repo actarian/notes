@@ -13,41 +13,77 @@
             return ((this % n) + n) % n;
         };
 
-        var steps = new Array(24).fill().map(function(v, i) {
-            return i + 1;
-        });
-        var currentStep = 0;
+        function getStepper() {
+            var stepper = {
+                pow: 0,
+                duration: 1.500, // sec
+            };
 
-        function setStep(index) {
-            var previous = $scope.currentStep || 0;
-            $scope.currentStep = index;
-            var circle = OBJECTS.circles[index] || getObjectCircles(index);
-            circle.add();
-            OBJECTS.circles[index] = circle;
-            if (previous !== index) {
-                circle = OBJECTS.circles[previous];
-                circle.remove();
+            var steps = new Array(24).fill().map(function(v, i) {
+                return i + 1;
+            });
+
+            var current = 0;
+
+            function tweenTo(pow, callback) {
+                if (stepper.tween) {
+                    stepper.tween.kill();
+                    stepper.tween = null;
+                }
+                stepper.tween = TweenLite.to(stepper, stepper.duration, {
+                    pow: pow,
+                    delay: 0,
+                    ease: Power2.easeInOut,
+                    onComplete: function() {
+                        if (callback) {
+                            callback();
+                        }
+                    },
+                });
             }
+
+            function setStep(index) {
+                var previous = stepper.current || 0;
+                stepper.current = index;
+                var circle = OBJECTS.circles[index] || getObjectCircles(index);
+                circle.add();
+                OBJECTS.circles[index] = circle;
+                tweenTo(index / steps.length, function() {
+                    stepper.tween = null;
+                });
+                setTimeout(function() {
+                    if (previous !== stepper.current) {
+                        var circle = OBJECTS.circles[previous];
+                        if (circle) {
+                            circle.remove();
+                        }
+                    }
+                }, stepper.duration * 1000);
+            }
+
+            function next() {
+                current++;
+                current = Math.min(steps.length - 1, current);
+                // current = current % steps.length;
+                setStep(current);
+            }
+
+            function previous() {
+                current--;
+                current = Math.max(0, current);
+                // current = current % steps.length;
+                setStep(current);
+            }
+            return angular.extend(stepper, {
+                steps: steps,
+                current: current,
+                next: next,
+                previous: previous,
+            });
         }
 
-        function nextStep() {
-            currentStep++;
-            currentStep = Math.min(steps.length - 1, currentStep);
-            // currentStep = currentStep % steps.length;
-            setStep(currentStep);
-        }
-
-        function previousStep() {
-            currentStep--;
-            currentStep = Math.max(0, currentStep);
-            // currentStep = currentStep % steps.length;
-            setStep(currentStep);
-        }
-
-        $scope.nextStep = nextStep;
-        $scope.previousStep = previousStep;
-        $scope.currentStep = currentStep;
-
+        var stepper = getStepper();
+        $scope.stepper = stepper;
 
         var analyser, analyserData, audio;
         var stats, gui, scene, camera, fov, ratio, near, far, shadow, back, light, renderer, container, width, height, w2, h2, mouse = { x: 0, y: 0 };
@@ -55,6 +91,7 @@
 
         var options = {
             audioUrl: "audio/rossini-192.mp3",
+            audioVolume: 0.5,
             colors: {
                 background: 0x111111, // 0xffffff,
                 lines: 0x999999, // 0x888888,
@@ -95,6 +132,9 @@
 
         function onChange(params) {
             // renderer.setClearColor(options.colors.background, 1);
+            if (audio) {
+                audio.volume = options.audioVolume;
+            }
             var backgroundColor = new THREE.Color(options.colors.background).getHexString();
             console.log('backgroundColor', backgroundColor);
             document.body.style.backgroundColor = '#' + backgroundColor;
@@ -381,56 +421,19 @@
                 scene.remove(object);
             }
 
-            var i = 0; // iterator
-
             camera.target = camera.target || new THREE.Vector3(0, 0, 0);
 
-            var currentTargetPow = 0,
-                currentCameraPow = 0;
-
             function update() {
+                var c = (1 / stepper.steps.length) / 10;
+                var cpow = stepper.pow;
+                var tpow = (cpow + c).mod(1);
 
-                var cameraStep = (1 / steps.length) / 10;
-                var cameraPow = currentStep / steps.length;
-                var targetPow = (cameraPow + cameraStep).mod(1);
-
-                currentCameraPow += (cameraPow - currentCameraPow) / 8;
-                currentTargetPow += (targetPow - currentTargetPow) / 8;
-
-                var position = cameraSpline.getPointAt(currentCameraPow);
-                var target = targetSpline.getPointAt(currentTargetPow);
-
-                /*
-                var duration = 20 * 1000;
-                var msec = Date.now();
-
-                var positionPow = ((msec - 1000) % duration) / duration;
-                var position = cameraSpline.getPointAt(positionPow);
-
-                var pow = (msec % duration) / duration;
-                var target = spline.getPointAt(pow);
-                */
+                var position = cameraSpline.getPointAt(cpow);
+                var target = targetSpline.getPointAt(tpow);
 
                 camera.position.copy(position);
                 camera.target.copy(target);
                 camera.lookAt(camera.target);
-
-                // var dir = spline.getTangentAt(pow);
-                /*                
-                var lookAhead = true;
-                var lookAt;
-                if (lookAhead) {
-                    // using arclength for stablization in look ahead
-                    lookAt = spline.getPointAt((pow + 30 / spline.getLength()) % 1).multiplyScalar(scale);
-                } else {
-                    // camera orientation 2 - up orientation via normal
-                    lookAt = new THREE.Vector3().copy(p).add(dir);
-                }
-                camera.matrix.lookAt(camera.position, lookAt, a);
-                camera.rotation.setFromRotationMatrix(camera.matrix, camera.rotation.order);
-                */
-
-                i++;
             }
 
             function getMaterial() {
@@ -467,6 +470,154 @@
                 remove: remove,
                 update: update,
                 setMaterial: setMaterial,
+            };
+        }
+
+        function getObjectCircles(index) {
+            var geometry, material, object, circles = [];
+
+            object = new THREE.Object3D();
+
+            geometry = new THREE.IcosahedronGeometry(90, 3); // radius, detail
+            material = new THREE.MeshBasicMaterial({
+                color: 0xffff00,
+            });
+            var sphere = new THREE.Mesh(geometry, material);
+            object.add(sphere);
+
+            material = new THREE.LineBasicMaterial({
+                color: options.colors.lines
+            });
+
+            var rows = options.rows,
+                space = options.space;
+            while (circles.length < options.rows) {
+                geometry = new THREE.Geometry();
+                var circle = new THREE.LineLoop(geometry, material);
+                circle.points = new Array(rows).fill(null);
+                // var spline = new THREE.CatmullRomCurve3(points);
+                // circle.spline = spline;
+                circles.push(circle);
+                object.add(circle);
+            }
+            var points = new Array(rows * rows).fill(null).map(function(n, i) {
+                var r = Math.floor(i / rows);
+                var c = i - r * rows;
+                var angle = 2 * Math.PI / rows;
+                var rad = angle * r + angle * c * 0.1;
+                var point = new THREE.Vector3();
+                point.r = {
+                    x: Math.cos(rad),
+                    y: Math.sin(rad),
+                    z: 96 + (c * c * c * 0.0001),
+                };
+                circles[c].points[r] = point;
+                circles[c].geometry.vertices.push(point);
+                return point;
+            });
+
+            var state = {
+                pow: 0,
+                duration: 0.350,
+                enabled: false,
+                adding: false,
+                removing: false,
+            };
+
+            var to = null;
+
+            function add() {
+                console.log('OBJECTS.circles.add');
+                scene.add(object);
+                state.adding = Date.now();
+                state.removing = false;
+                state.enabled = true;
+                if (state.tween) {
+                    state.tween.kill();
+                }
+                state.tween = TweenLite.to(state, state.duration, {
+                    pow: 1,
+                    delay: 0,
+                    ease: Power2.easeInOut,
+                    onComplete: function() {
+                        state.adding = false;
+                    },
+                });
+            }
+
+            function remove() {
+                console.log('OBJECTS.circles.remove');
+                state.adding = false;
+                state.removing = Date.now();
+                if (state.tween) {
+                    state.tween.kill();
+                }
+                state.tween = TweenLite.to(state, state.duration, {
+                    pow: 0,
+                    delay: 0,
+                    ease: Power2.easeInOut,
+                    onComplete: function() {
+                        state.removing = false;
+                        state.enabled = false;
+                        scene.remove(object);
+                    },
+                });
+            }
+
+            var d = 0;
+
+            function update() {
+                var rows = options.rows,
+                    audioStrength = options.audioStrength,
+                    noiseStrength = options.noiseStrength,
+                    circularStrength = options.circularStrength;
+                angular.forEach(points, function(v, i) {
+                    // animateVertexAtIndex(v, i, d);
+                    var r = Math.floor(i / rows);
+                    var c = i - r * rows;
+                    var b = Math.abs(c - rows / 2) * 2;
+                    var dr = 1 - (Math.abs(r - rows / 2) / (rows / 2));
+                    var dc = 1 - (Math.abs(c - rows / 2) / (rows / 2));
+                    var drc = (dr + dc) / 2;
+                    var ai = r % options.bands;
+                    var pow = (analyserData[ai] + analyserData[rows - 1 - ai]) / 2;
+                    var scale = pow / options.bands;
+                    var na = c * rows + ((r + d) % rows);
+                    var noise = options.noiseMap[na];
+                    var cpow = 1 - ((rows - c) / rows * circularStrength);
+                    var level = v.r.z + (noise / 64 * noiseStrength) * cpow + (audioStrength * 2 * scale * scale) * cpow;
+                    var radius = v.radius || level;
+                    radius += (level - radius) / 2;
+                    v.x = v.r.x * radius;
+                    v.y = v.r.y * radius;
+                    v.z = 0; // -c;
+                    v.radius = radius;
+                });
+                angular.forEach(circles, function(circle, l) {
+                    // var points = circle.points;
+                    // var spline = circle.spline;
+                    // spline.getPoints(rows * 2);
+                    // circle.geometry.vertices = points;
+                    // geometry.computeLineDistances();
+                    // geometry.lineDistancesNeedUpdate = true;
+                    circle.geometry.verticesNeedUpdate = true;
+                });
+                object.scale.x = object.scale.y = object.scale.z = 0.001 + 0.3 * state.pow;
+                object.lookAt(camera.position);
+                // d++;
+            }
+
+            var position = OBJECTS.ribbon.cameraSpline.getPointAt((index + 0.5) / stepper.steps.length);
+
+            object.position.copy(position);
+
+            return {
+                add: add,
+                remove: remove,
+                update: update,
+                object: object,
+                material: material,
+                state: state,
             };
         }
 
@@ -610,131 +761,12 @@
             };
         }
 
-        function getObjectCircles(index) {
-            var object, material, circles = [];
-            material = new THREE.LineBasicMaterial({
-                color: options.colors.lines
-            });
-            object = new THREE.Object3D();
-            var rows = options.rows,
-                space = options.space;
-            while (circles.length < options.rows) {
-                var geometry = new THREE.Geometry();
-                var circle = new THREE.LineLoop(geometry, material);
-                circle.points = new Array(rows).fill(null);
-                // var spline = new THREE.CatmullRomCurve3(points);
-                // circle.spline = spline;
-                circles.push(circle);
-                object.add(circle);
-            }
-            var points = new Array(rows * rows).fill(null).map(function(n, i) {
-                var r = Math.floor(i / rows);
-                var c = i - r * rows;
-                var angle = 2 * Math.PI / rows;
-                var rad = angle * r + angle * c * 0.1;
-                var point = new THREE.Vector3();
-                point.r = {
-                    x: Math.cos(rad),
-                    y: Math.sin(rad),
-                    z: 96 + (c * c * c * 0.0001),
-                };
-                circles[c].points[r] = point;
-                circles[c].geometry.vertices.push(point);
-                return point;
-            });
-
-            var state = {
-                enabled: false,
-            };
-
-            var adding = false,
-                removing = false;
-
-            function add() {
-                console.log('OBJECTS.circles.add');
-                scene.add(object);
-                adding = Date.now();
-                removing = false;
-                state.enabled = true;
-                setTimeout(function() {
-                    adding = false;
-                }, 3000);
-            }
-
-            function remove() {
-                console.log('OBJECTS.circles.remove');
-                adding = false;
-                removing = Date.now();
-                setTimeout(function() {
-                    scene.remove(object);
-                    removing = false;
-                    state.enabled = false;
-                }, 3000);
-            }
-
-            var d = 0;
-
-            function update() {
-                var rows = options.rows,
-                    audioStrength = options.audioStrength,
-                    noiseStrength = options.noiseStrength,
-                    circularStrength = options.circularStrength;
-                angular.forEach(points, function(v, i) {
-                    // animateVertexAtIndex(v, i, d);
-                    var r = Math.floor(i / rows);
-                    var c = i - r * rows;
-                    var b = Math.abs(c - rows / 2) * 2;
-                    var dr = 1 - (Math.abs(r - rows / 2) / (rows / 2));
-                    var dc = 1 - (Math.abs(c - rows / 2) / (rows / 2));
-                    var drc = (dr + dc) / 2;
-                    var ai = r % options.bands;
-                    var pow = (analyserData[ai] + analyserData[rows - 1 - ai]) / 2;
-                    var scale = pow / options.bands;
-                    var na = c * rows + ((r + d) % rows);
-                    var noise = options.noiseMap[na];
-                    var cpow = 1 - ((rows - c) / rows * circularStrength);
-                    var level = v.r.z + (noise / 64 * noiseStrength) * cpow + (audioStrength * 2 * scale * scale) * cpow;
-                    var radius = v.radius || level;
-                    radius += (level - radius) / 2;
-                    v.x = v.r.x * radius;
-                    v.y = v.r.y * radius;
-                    v.z = 0; // -c;
-                    v.radius = radius;
-                });
-                angular.forEach(circles, function(circle, l) {
-                    // var points = circle.points;
-                    // var spline = circle.spline;
-                    // spline.getPoints(rows * 2);
-                    // circle.geometry.vertices = points;
-                    // geometry.computeLineDistances();
-                    // geometry.lineDistancesNeedUpdate = true;
-                    circle.geometry.verticesNeedUpdate = true;
-                });
-                object.lookAt(camera.position);
-                d++;
-            }
-
-            var position = OBJECTS.ribbon.cameraSpline.getPointAt((index + 0.5) / steps.length);
-
-            object.position.copy(position);
-            object.scale.x = object.scale.y = object.scale.z = 0.3;
-
-            return {
-                add: add,
-                remove: remove,
-                update: update,
-                object: object,
-                material: material,
-                state: state,
-            };
-        }
-
         function createObjects() {
             // OBJECTS.tube = getObjectTube();
             OBJECTS.ribbon = getObjectRibbon();
             OBJECTS.dots = getObjectDots();
             OBJECTS.lines = getObjectLines();
-            OBJECTS.circles = new Array(steps).fill(null);
+            OBJECTS.circles = new Array(stepper.steps).fill(null);
             // OBJECTS.notes = getNotes();
         }
 
@@ -758,7 +790,7 @@
                 analyserData = new Uint8Array(bufferLength);
                 return analyserData;
             });
-            audio.volume = 0.01;
+            audio.volume = options.audioVolume;
             return audio.play();
         }
 
@@ -817,6 +849,7 @@
             gui.add(options, 'display', { Circles: 0, Lines: 1, Dots: 2 }).onChange(onChange);
             gui.addColor(options.colors, 'background').onChange(onChange);
             gui.addColor(options.colors, 'lines').onChange(onChange);
+            gui.add(options, 'audioVolume', 0.01, 1.0).onChange(onChange);
             gui.add(options, 'audioStrength', 10, 100).onChange(onChange);
             gui.add(options, 'noiseStrength', 10, 100).onChange(onChange);
             gui.add(options, 'circularStrength', 0.01, 0.90).onChange(onChange);

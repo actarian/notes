@@ -32,9 +32,9 @@
 <body ng-controller="RootCtrl" ng-cloak>
     <section id="scene"></section>
     <div class="controls">
-        <button type="button" ng-click="previousStep()">prev</button>
-        <button type="button" ng-click="nextStep()">next</button>
-        <span ng-bind="currentStep"></span>
+        <button type="button" ng-click="stepper.previous()">prev</button>
+        <button type="button" ng-click="stepper.next()">next</button>
+        <span ng-bind="stepper.current"></span>
     </div>
     <!-- <json-formatter json="model"></json-formatter> -->
     <!-- TEMPLATES -->

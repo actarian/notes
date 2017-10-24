@@ -4,6 +4,8 @@
             "bower_components/three.js/examples/js/controls/OrbitControls.js",
             "bower_components/three.js/examples/js/CurveExtras.js",
             "bower_components/THREE.MeshLine/src/THREE.MEshLine.js",
+            "bower_components/gsap/src/minified/TweenLite.min.js",
+            "bower_components/gsap/src/minified/easing/EasePack.min.js",
             "bower_components/stats.js/build/stats.js",
             "bower_components/dat.gui/build/dat.gui.js"
         ],
