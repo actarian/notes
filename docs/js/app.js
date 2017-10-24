@@ -54,11 +54,52 @@
     var app = angular.module('app');
 
     app.controller('RootCtrl', ['$scope', function($scope) {
+
+        var OBJECTS = {};
+
+        Number.prototype.mod = function(n) {
+            return ((this % n) + n) % n;
+        };
+
+        var steps = new Array(24).fill().map(function(v, i) {
+            return i + 1;
+        });
+        var currentStep = 0;
+
+        function setStep(index) {
+            var previous = $scope.currentStep || 0;
+            $scope.currentStep = index;
+            var circle = OBJECTS.circles[index] || getObjectCircles(index);
+            circle.add();
+            OBJECTS.circles[index] = circle;
+            if (previous !== index) {
+                circle = OBJECTS.circles[previous];
+                circle.remove();
+            }
+        }
+
+        function nextStep() {
+            currentStep++;
+            currentStep = Math.min(steps.length - 1, currentStep);
+            // currentStep = currentStep % steps.length;
+            setStep(currentStep);
+        }
+
+        function previousStep() {
+            currentStep--;
+            currentStep = Math.max(0, currentStep);
+            // currentStep = currentStep % steps.length;
+            setStep(currentStep);
+        }
+
+        $scope.nextStep = nextStep;
+        $scope.previousStep = previousStep;
+        $scope.currentStep = currentStep;
+
+
         var analyser, analyserData, audio;
         var stats, gui, scene, camera, fov, ratio, near, far, shadow, back, light, renderer, container, width, height, w2, h2, mouse = { x: 0, y: 0 };
         var controls = null;
-
-        var OBJECTS = {};
 
         var options = {
             audioUrl: "audio/rossini-192.mp3",
@@ -101,7 +142,19 @@
         options.noiseMap = getPerlinNoise(options.rows, options.rows);
 
         function onChange(params) {
-            renderer.setClearColor(options.colors.background, 1);
+            // renderer.setClearColor(options.colors.background, 1);
+            var backgroundColor = new THREE.Color(options.colors.background).getHexString();
+            console.log('backgroundColor', backgroundColor);
+            document.body.style.backgroundColor = '#' + backgroundColor;
+            if (OBJECTS.ribbon) {
+                OBJECTS.ribbon.setMaterial();
+            }
+            angular.forEach(OBJECTS.circles, function(circle) {
+                if (circle) {
+                    circle.material.color.setHex(options.colors.lines);
+                }
+            });
+            /*
             if (OBJECTS.circles) {
                 OBJECTS.circles.material.color.setHex(options.colors.lines);
                 if (options.display === '0') {
@@ -110,6 +163,7 @@
                     OBJECTS.circles.remove();
                 }
             }
+            */
             if (OBJECTS.lines) {
                 OBJECTS.lines.material.color.setHex(options.colors.lines);
                 if (options.display === '1') {
@@ -150,20 +204,24 @@
             w2 = width / 2;
             h2 = height / 2;
             fov = 60;
-            near = 1;
+            near = 0.001;
             far = 20000;
+
             scene = new THREE.Scene();
-            // scene.fog = new THREE.Fog(0xeeeeee, 256, 500);
+            // scene.fog = new THREE.Fog(0x000000, 300, 1000);
+
             camera = new THREE.PerspectiveCamera(fov, ratio, near, far);
             camera.position.z = 100;
             camera.position.y = -500;
             camera.lookAt(new THREE.Vector3(0, 0, 0));
             renderer = new THREE.WebGLRenderer({
                 alpha: true,
-                antialias: true
+                antialias: true,
+                logarithmicDepthBuffer: true
             });
+            renderer.setClearColor(0x000000, 0); // the default
+            // renderer.setClearColor(options.colors.background, 1);
             renderer.setSize(width, height);
-            renderer.setClearColor(options.colors.background, 1);
             renderer.shadowMap.enabled = true;
             container = document.getElementById('scene');
             container.appendChild(renderer.domElement);
@@ -173,103 +231,6 @@
 
             addListeners();
             // controls = new THREE.OrbitControls(camera, renderer.domElement);
-        }
-
-        function createPath() {
-            var spline = new THREE.CatmullRomCurve3([
-                new THREE.Vector3(0, -40, -40),
-                new THREE.Vector3(0, 40, -40),
-                new THREE.Vector3(0, 140, -40),
-                new THREE.Vector3(0, 40, 40),
-                new THREE.Vector3(0, -40, 40)
-            ]);
-            spline.type = 'catmullrom';
-            spline.closed = true;
-
-            var object = new THREE.Object3D();
-            scene.add(object);
-
-            var extrusionSegments = 500;
-            var radiusSegments = 12;
-            var closed = true;
-            var normal = new THREE.Vector3();
-            var binormal = new THREE.Vector3();
-            var material = new THREE.MeshLambertMaterial({
-                color: 0xff00ff
-            });
-            var wireframeMaterial = new THREE.MeshBasicMaterial({
-                color: 0x000000,
-                opacity: 0.3,
-                wireframe: true,
-                transparent: true,
-            });
-            var geometry = new THREE.TubeBufferGeometry(spline, extrusionSegments, 2, radiusSegments, closed);
-            // if (group !== undefined) {
-            //     object.remove(group);
-            //     group.children[0].geometry.dispose();
-            //     group.children[1].geometry.dispose();
-            // }            
-            var group = THREE.SceneUtils.createMultiMaterialObject(geometry, [material, wireframeMaterial]);
-            object.add(group);
-            /*
-            var geometry = new THREE.Geometry();
-            geometry.vertices = spline.getPoints(500);
-            var line = new MeshLine();
-            line.setGeometry(geometry);
-            // line.setGeometry( geometry, function( p ) { return 2; } ); // makes width 2 * lineWidth
-            // line.setGeometry( geometry, function( p ) { return 1 - p; } ); // makes width taper
-            // line.setGeometry( geometry, function( p ) { return 2 + Math.sin( 50 * p ); } ); // makes width sinusoidal
-            var material = new MeshLineMaterial({
-                color: new THREE.Color(0xffffff),
-                lineWidth: 4,
-            });
-            var mesh = new THREE.Mesh(line.geometry, material);
-            object.add(mesh);
-            */
-            return {
-                object: object,
-                geometry: geometry,
-                normal: normal,
-                binormal: binormal,
-            };
-        }
-
-        function moveCamera() {
-            if (!OBJECTS.path) {
-                return;
-            }
-            var duration = 20 * 1000;
-            var scale = 1;
-            var offset = 15;
-            var lookAhead = true;
-            var geometry = OBJECTS.path.geometry;
-            var normal = OBJECTS.path.normal;
-            var binormal = OBJECTS.path.binormal;
-            var msec = Date.now();
-            var pow = (msec % duration) / duration;
-            var p = geometry.parameters.path.getPointAt(pow);
-            p.multiplyScalar(scale);
-            // interpolation
-            var segments = geometry.tangents.length;
-            var progress = pow * segments;
-            var current = Math.floor(progress);
-            var next = (current + 1) % segments;
-            binormal.subVectors(geometry.binormals[next], geometry.binormals[current]);
-            binormal.multiplyScalar(progress - current).add(geometry.binormals[current]);
-            var dir = geometry.parameters.path.getTangentAt(pow);
-            normal.copy(binormal).cross(dir);
-            p.add(normal.clone().multiplyScalar(offset));
-            camera.position.copy(p);
-            var lookAt;
-            if (lookAhead) {
-                // using arclength for stablization in look ahead
-                lookAt = geometry.parameters.path.getPointAt((pow + 30 / geometry.parameters.path.getLength()) % 1).multiplyScalar(scale);
-            } else {
-                // camera orientation 2 - up orientation via normal
-                lookAt = new THREE.Vector3().copy(p).add(dir);
-            }
-            camera.matrix.lookAt(camera.position, lookAt, normal);
-            camera.rotation.setFromRotationMatrix(camera.matrix, camera.rotation.order);
         }
 
         function animateVertexAtIndex(v, i, d) {
@@ -288,6 +249,273 @@
             var ni = r * rows + ((c + d) % rows);
             var level = (options.noiseMap[ni] / 64 * noiseStrength) * drc + (audioStrength * scale);
             v.z += (level - v.z) / (3 + 3 * Math.max(0.000001, 1 - drc));
+        }
+
+        function getObjectTube() {
+            var options = {
+                path: spline,
+                tubularSegments: 500,
+                radius: 1,
+                radiusSegments: 2,
+                closed: true,
+            }
+            var spline = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(-400, -400, 0),
+                new THREE.Vector3(400, -400, 0),
+                new THREE.Vector3(1400, -400, 0),
+                new THREE.Vector3(400, 400, 0),
+                new THREE.Vector3(-400, 400, 0)
+            ]);
+            spline.type = 'catmullrom';
+            spline.closed = true;
+
+            var object = new THREE.Object3D();
+            scene.add(object);
+
+            var material = new THREE.MeshLambertMaterial({
+                color: 0xffffff
+            });
+            var geometry = new THREE.TubeBufferGeometry(spline, options.tubularSegments, options.radius, options.radiusSegments, options.closed);
+            var group = new THREE.Mesh(geometry, material);
+            object.add(group);
+
+            // if (group !== undefined) {
+            //     object.remove(group);
+            //     group.children[0].geometry.dispose();
+            //     group.children[1].geometry.dispose();
+            // }            
+
+            /*
+            var geometry = new THREE.Geometry();
+            geometry.vertices = spline.getPoints(500);
+            var line = new MeshLine();
+            line.setGeometry(geometry);
+            // line.setGeometry( geometry, function( p ) { return 2; } ); // makes width 2 * lineWidth
+            // line.setGeometry( geometry, function( p ) { return 1 - p; } ); // makes width taper
+            // line.setGeometry( geometry, function( p ) { return 2 + Math.sin( 50 * p ); } ); // makes width sinusoidal
+            var material = new MeshLineMaterial({
+                color: new THREE.Color(0xffffff),
+                lineWidth: 4,
+            });
+            var mesh = new THREE.Mesh(line.geometry, material);
+            object.add(mesh);
+            */
+
+            function add() {
+                console.log('OBJECTS.tube.add');
+                scene.add(object);
+            }
+
+            function remove() {
+                console.log('OBJECTS.tube.remove');
+                scene.remove(object);
+            }
+
+            var d = 0; // iterator
+            var a = new THREE.Vector3(); // normal
+            var b = new THREE.Vector3(); // binormal
+
+            function update() {
+                var duration = 20 * 1000;
+                var scale = 1;
+                var offset = 15;
+                var lookAhead = true;
+                var msec = Date.now();
+                var pow = (msec % duration) / duration;
+                var dir = spline.getTangentAt(pow);
+                var tangents = geometry.tangents;
+                var binormals = geometry.binormals;
+                var x = pow * tangents.length;
+                var c = Math.floor(x);
+                var n = (c + 1) % tangents.length;
+                b.subVectors(binormals[n], binormals[c]);
+                b.multiplyScalar(x - c).add(binormals[c]);
+                a.copy(b).cross(dir);
+                var p = spline.getPointAt(pow);
+                p.multiplyScalar(scale);
+                p.add(a.clone().multiplyScalar(offset));
+                camera.position.copy(p);
+                var lookAt;
+                if (lookAhead) {
+                    // using arclength for stablization in look ahead
+                    lookAt = spline.getPointAt((pow + 30 / spline.getLength()) % 1).multiplyScalar(scale);
+                } else {
+                    // camera orientation 2 - up orientation via normal
+                    lookAt = new THREE.Vector3().copy(p).add(dir);
+                }
+                camera.matrix.lookAt(camera.position, lookAt, a);
+                camera.rotation.setFromRotationMatrix(camera.matrix, camera.rotation.order);
+                d++;
+            }
+
+            return {
+                object: object,
+                spline: spline,
+                geometry: geometry,
+                add: add,
+                remove: remove,
+                update: update,
+            };
+        }
+
+        function getRandomRange(min, max, allowNegatives) {
+            var n = -1 + Math.random() * 2;
+            var a = Math.abs(n);
+            var s = allowNegatives ? Math.floor(n / a) : 1;
+            return s * (min + (max - min) * a);
+        }
+
+        function getObjectRibbon() {
+            var material = getMaterial();
+
+            /*
+            var points = [
+                new THREE.Vector3(-2000, 0, -2000),
+                new THREE.Vector3(2000, 0, -2000),
+                new THREE.Vector3(4000, 0, -2000),
+                new THREE.Vector3(2000, 0, 2000),
+                new THREE.Vector3(-2000, 0, 2000)
+            ];
+            */
+
+            var prev = new THREE.Vector3();
+            var points = new Array(12).fill(null).map(function() {
+                var p = new THREE.Vector3().copy(prev);
+                prev.x += getRandomRange(500, 1000, true);
+                prev.y += getRandomRange(50, 100, true);
+                prev.z += getRandomRange(1000, 2000, false);
+                return p;
+            });
+
+            var spline = new THREE.CatmullRomCurve3(points);
+            spline.type = 'catmullrom';
+            // spline.closed = true;
+
+            var cameraHeight = 30;
+            var cameraSpline = new THREE.CatmullRomCurve3(spline.points.map(function(p) {
+                return new THREE.Vector3(p.x, p.y + cameraHeight, p.z);
+            }));
+            cameraSpline.type = 'catmullrom';
+            // cameraSpline.closed = true;
+
+            var targetHeight = 15;
+            var targetSpline = new THREE.CatmullRomCurve3(spline.points.map(function(p) {
+                return new THREE.Vector3(p.x, p.y + targetHeight, p.z);
+            }));
+            targetSpline.type = 'catmullrom';
+            // targetSpline.closed = true;
+
+            var geometry = new THREE.Geometry();
+            geometry.vertices = spline.getPoints(1200);
+
+            var line = new MeshLine();
+            line.setGeometry(geometry);
+            // line.setGeometry( geometry, function( p ) { return 2; } ); // makes width 2 * lineWidth
+            // line.setGeometry( geometry, function( p ) { return 1 - p; } ); // makes width taper
+            // line.setGeometry( geometry, function( p ) { return 2 + Math.sin( 50 * p ); } ); // makes width sinusoidal
+
+            var object = new THREE.Mesh(line.geometry, material);
+            // var object = new THREE.Object3D();
+            // object.add(mesh);
+            scene.add(object);
+
+            function add() {
+                console.log('OBJECTS.ribbon.add');
+                scene.add(object);
+            }
+
+            function remove() {
+                console.log('OBJECTS.ribbon.remove');
+                scene.remove(object);
+            }
+
+            var i = 0; // iterator
+
+            camera.target = camera.target || new THREE.Vector3(0, 0, 0);
+
+            var currentTargetPow = 0,
+                currentCameraPow = 0;
+
+            function update() {
+
+                var cameraStep = (1 / steps.length) / 10;
+                var cameraPow = currentStep / steps.length;
+                var targetPow = (cameraPow + cameraStep).mod(1);
+
+                currentCameraPow += (cameraPow - currentCameraPow) / 8;
+                currentTargetPow += (targetPow - currentTargetPow) / 8;
+
+                var position = cameraSpline.getPointAt(currentCameraPow);
+                var target = targetSpline.getPointAt(currentTargetPow);
+
+                /*
+                var duration = 20 * 1000;
+                var msec = Date.now();
+
+                var positionPow = ((msec - 1000) % duration) / duration;
+                var position = cameraSpline.getPointAt(positionPow);
+
+                var pow = (msec % duration) / duration;
+                var target = spline.getPointAt(pow);
+                */
+
+                camera.position.copy(position);
+                camera.target.copy(target);
+                camera.lookAt(camera.target);
+
+                // var dir = spline.getTangentAt(pow);
+                /*                
+                var lookAhead = true;
+                var lookAt;
+                if (lookAhead) {
+                    // using arclength for stablization in look ahead
+                    lookAt = spline.getPointAt((pow + 30 / spline.getLength()) % 1).multiplyScalar(scale);
+                } else {
+                    // camera orientation 2 - up orientation via normal
+                    lookAt = new THREE.Vector3().copy(p).add(dir);
+                }
+                camera.matrix.lookAt(camera.position, lookAt, a);
+                camera.rotation.setFromRotationMatrix(camera.matrix, camera.rotation.order);
+                */
+
+                i++;
+            }
+
+            function getMaterial() {
+                var resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
+                return new MeshLineMaterial({
+                    color: new THREE.Color(options.colors.lines),
+                    lineWidth: 4,
+                    opacity: 1,
+                    resolution: resolution,
+                    sizeAttenuation: 1,
+                    near: 1,
+                    far: 1000,
+                    depthTest: false,
+                    blending: THREE.AdditiveBlending,
+                    transparent: false,
+                    side: THREE.DoubleSide,
+                });
+            }
+
+            function setMaterial() {
+                // !!! non va bene
+                OBJECTS.ribbon.material = getMaterial();
+                OBJECTS.ribbon.object.material = OBJECTS.ribbon.material;
+            }
+
+            return {
+                object: object,
+                spline: spline,
+                cameraSpline: cameraSpline,
+                targetSpline: targetSpline,
+                geometry: geometry,
+                material: material,
+                add: add,
+                remove: remove,
+                update: update,
+                setMaterial: setMaterial,
+            };
         }
 
         function getObjectDots() {
@@ -351,11 +579,11 @@
             }
 
             return {
+                object: object,
+                material: material,
                 add: add,
                 remove: remove,
                 update: update,
-                object: object,
-                material: material,
             };
         }
 
@@ -430,7 +658,7 @@
             };
         }
 
-        function getObjectCircles() {
+        function getObjectCircles(index) {
             var object, material, circles = [];
             material = new THREE.LineBasicMaterial({
                 color: options.colors.lines
@@ -463,14 +691,33 @@
                 return point;
             });
 
+            var state = {
+                enabled: false,
+            };
+
+            var adding = false,
+                removing = false;
+
             function add() {
                 console.log('OBJECTS.circles.add');
                 scene.add(object);
+                adding = Date.now();
+                removing = false;
+                state.enabled = true;
+                setTimeout(function() {
+                    adding = false;
+                }, 3000);
             }
 
             function remove() {
                 console.log('OBJECTS.circles.remove');
-                scene.remove(object);
+                adding = false;
+                removing = Date.now();
+                setTimeout(function() {
+                    scene.remove(object);
+                    removing = false;
+                    state.enabled = false;
+                }, 3000);
             }
 
             var d = 0;
@@ -498,8 +745,8 @@
                     var radius = v.radius || level;
                     radius += (level - radius) / 2;
                     v.x = v.r.x * radius;
-                    v.y = -c;
-                    v.z = v.r.y * radius;
+                    v.y = v.r.y * radius;
+                    v.z = 0; // -c;
                     v.radius = radius;
                 });
                 angular.forEach(circles, function(circle, l) {
@@ -511,123 +758,32 @@
                     // geometry.lineDistancesNeedUpdate = true;
                     circle.geometry.verticesNeedUpdate = true;
                 });
+                object.lookAt(camera.position);
                 d++;
             }
+
+            var position = OBJECTS.ribbon.cameraSpline.getPointAt((index + 0.5) / steps.length);
+
+            object.position.copy(position);
+            object.scale.x = object.scale.y = object.scale.z = 0.3;
+
             return {
                 add: add,
                 remove: remove,
                 update: update,
                 object: object,
                 material: material,
+                state: state,
             };
         }
 
-        /*
-        function getNotes() {
-            var object, geometry, material;
-            geometry = new THREE.Geometry();
-            texture = new THREE.CanvasTexture(getSprite());
-            material = new THREE.PointsMaterial({
-                size: 12,
-                map: texture,
-                vertexColors: THREE.VertexColors,
-                blending: THREE.AdditiveBlending,
-                depthTest: false,
-                transparent: true
-            });
-            material = new THREE.PointsMaterial({
-                color: options.colors.notes,
-                size: 2,
-                sizeAttenuation: false,
-            });
-            object = new THREE.Points(geometry, material);
-
-            var points = options.points;
-            var i = 0,
-                t = points.length;
-            while (i < t) {
-                var p = points[i];
-                geometry.vertices.push(new THREE.Vector3(p.x, p.y, p.z));
-                // geometry.colors.push(new THREE.Color(0, 0, 0));
-                i++;
-            }
-            geometry.mergeVertices();
-            geometry.verticesNeedUpdate = true;
-
-            function add() {
-                console.log('OBJECTS.notes.add');
-                scene.add(object);
-            }
-
-            function remove() {
-                console.log('OBJECTS.notes.remove');
-                scene.remove(object);
-            }
-
-            function update() {
-                angular.forEach(geometry.vertices, function(v, i) {
-                    var index = i % options.bands;
-                    var pow = analyserData[index];
-                    var scale = (pow / options.bands) * 2;
-                    var p = options.points[i];
-                    var vx = p.x * (1 + scale);
-                    var vy = p.y * (1 + scale);
-                    var vz = p.z * (1 + scale);
-                    v.x += (vx - v.x) / 3;
-                    v.y += (vy - v.y) / 3;
-                    v.z += (vz - v.z) / 3;
-                });
-                geometry.verticesNeedUpdate = true;
-            }
-            return {
-                add: add,
-                remove: remove,
-                update: update,
-                object: object,
-            };
-
-        }
-
-        function getLines() {
-            var object, geometry, material;
-
-            geometry = new THREE.Geometry();
-            material = new THREE.LineDashedMaterial({
-                color: options.colors.lines,
-                dashSize: 1,
-                gapSize: 0.5,
-            });
-            material = new THREE.LineBasicMaterial({
-                color: options.colors.lines
-            });
-            object = new THREE.Line(geometry, material);
-
-            function add() {
-                scene.add(object);
-            }
-
-            function remove() {
-                scene.remove(object);
-            }
-
-            function update() {
-
-            }
-            return {
-                add: add,
-                remove: remove,
-                update: update,
-                object: object,
-            };
-
-        }
-        */
         function createObjects() {
+            // OBJECTS.tube = getObjectTube();
+            OBJECTS.ribbon = getObjectRibbon();
             OBJECTS.dots = getObjectDots();
             OBJECTS.lines = getObjectLines();
-            OBJECTS.circles = getObjectCircles();
+            OBJECTS.circles = new Array(steps).fill(null);
             // OBJECTS.notes = getNotes();
-            OBJECTS.path = createPath();
         }
 
         function createAnalyser() {
@@ -650,6 +806,7 @@
                 analyserData = new Uint8Array(bufferLength);
                 return analyserData;
             });
+            audio.volume = 0.01;
             return audio.play();
         }
 
@@ -659,7 +816,11 @@
             if (analyserData) {
                 analyser.getByteFrequencyData(analyserData);
                 if (options.display === '0') {
-                    OBJECTS.circles.update();
+                    angular.forEach(OBJECTS.circles, function(circle) {
+                        if (circle && circle.state.enabled) {
+                            circle.update();
+                        }
+                    });
                 } else if (options.display === '1') {
                     OBJECTS.lines.update();
                 } else if (options.display === '2') {
@@ -680,57 +841,23 @@
             if (controls) {
                 controls.update();
             }
-            // moveCamera();
+            if (OBJECTS.tube) {
+                OBJECTS.tube.update();
+            }
+            if (OBJECTS.ribbon) {
+                OBJECTS.ribbon.update();
+            }
             updateAnalyser();
             renderer.render(scene, camera);
         }
 
         createScene();
-        createObjects();
-        // addNotes();
-        createAnalyser();
         // createLights();
+        createObjects();
+        createAnalyser();
         addGui();
         onChange();
         loop();
-
-        function addNotes() {
-            // alert('onChange', params);
-            /*
-            var dx = 10 - 10 * params.dispersion * (1 - params.bulge);
-            var dy = 10 - 10 * params.dispersion * (1 - params.bulge);
-            var dz = 40 - 40 * params.dispersion * (1 - params.bulge);
-            */
-            var geometry = new THREE.Geometry();
-            // geometry.vertices.splice(0, geometry.vertices.length);
-            var points = options.points;
-            var i = 0,
-                t = points.length;
-            while (i < t) {
-                var p = points[i];
-                geometry.vertices.push(new THREE.Vector3(p.x, p.y, p.z));
-                // geometry.colors.push(new THREE.Color(0, 0, 0));
-                i++;
-            }
-            geometry.mergeVertices();
-            geometry.verticesNeedUpdate = true;
-            notes.geometry = geometry;
-            addSplines(points);
-        }
-
-        function addSplines(points) {
-            points = points.map(function(point) {
-                return new THREE.Vector3(point.x, point.y, point.z);
-            });
-            var spline = new THREE.CatmullRomCurve3(points);
-            var geometry = new THREE.Geometry();
-            geometry.vertices = spline.getPoints(5000);
-            // geometry.mergeVertices();
-            // geometry.verticesNeedUpdate = true;
-            // geometry.computeLineDistances();
-            // geometry.lineDistancesNeedUpdate = true;
-            lines.geometry = geometry;
-        }
 
         function addGui() {
             gui = new dat.GUI();
@@ -866,7 +993,7 @@
                 var h = hash & 15;
                 var u = h < 8 ? x : y,
                     v = h < 4 ? y : h == 12 || h == 14 ? x : z;
-                return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+                return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
             }
 
             return {
@@ -904,6 +1031,150 @@
                 }
             };
         }
+
+
+
+        //////////
+
+        function addNotes() {
+            // alert('onChange', params);
+            /*
+            var dx = 10 - 10 * params.dispersion * (1 - params.bulge);
+            var dy = 10 - 10 * params.dispersion * (1 - params.bulge);
+            var dz = 40 - 40 * params.dispersion * (1 - params.bulge);
+            */
+            var geometry = new THREE.Geometry();
+            // geometry.vertices.splice(0, geometry.vertices.length);
+            var points = options.points;
+            var i = 0,
+                t = points.length;
+            while (i < t) {
+                var p = points[i];
+                geometry.vertices.push(new THREE.Vector3(p.x, p.y, p.z));
+                // geometry.colors.push(new THREE.Color(0, 0, 0));
+                i++;
+            }
+            geometry.mergeVertices();
+            geometry.verticesNeedUpdate = true;
+            notes.geometry = geometry;
+            addSplines(points);
+        }
+
+        function addSplines(points) {
+            points = points.map(function(point) {
+                return new THREE.Vector3(point.x, point.y, point.z);
+            });
+            var spline = new THREE.CatmullRomCurve3(points);
+            var geometry = new THREE.Geometry();
+            geometry.vertices = spline.getPoints(5000);
+            // geometry.mergeVertices();
+            // geometry.verticesNeedUpdate = true;
+            // geometry.computeLineDistances();
+            // geometry.lineDistancesNeedUpdate = true;
+            lines.geometry = geometry;
+        }
+
+        /*
+        function getNotes() {
+            var object, geometry, material;
+            geometry = new THREE.Geometry();
+            texture = new THREE.CanvasTexture(getSprite());
+            material = new THREE.PointsMaterial({
+                size: 12,
+                map: texture,
+                vertexColors: THREE.VertexColors,
+                blending: THREE.AdditiveBlending,
+                depthTest: false,
+                transparent: true
+            });
+            material = new THREE.PointsMaterial({
+                color: options.colors.notes,
+                size: 2,
+                sizeAttenuation: false,
+            });
+            object = new THREE.Points(geometry, material);
+
+            var points = options.points;
+            var i = 0,
+                t = points.length;
+            while (i < t) {
+                var p = points[i];
+                geometry.vertices.push(new THREE.Vector3(p.x, p.y, p.z));
+                // geometry.colors.push(new THREE.Color(0, 0, 0));
+                i++;
+            }
+            geometry.mergeVertices();
+            geometry.verticesNeedUpdate = true;
+
+            function add() {
+                console.log('OBJECTS.notes.add');
+                scene.add(object);
+            }
+
+            function remove() {
+                console.log('OBJECTS.notes.remove');
+                scene.remove(object);
+            }
+
+            function update() {
+                angular.forEach(geometry.vertices, function(v, i) {
+                    var index = i % options.bands;
+                    var pow = analyserData[index];
+                    var scale = (pow / options.bands) * 2;
+                    var p = options.points[i];
+                    var vx = p.x * (1 + scale);
+                    var vy = p.y * (1 + scale);
+                    var vz = p.z * (1 + scale);
+                    v.x += (vx - v.x) / 3;
+                    v.y += (vy - v.y) / 3;
+                    v.z += (vz - v.z) / 3;
+                });
+                geometry.verticesNeedUpdate = true;
+            }
+            return {
+                add: add,
+                remove: remove,
+                update: update,
+                object: object,
+            };
+
+        }
+
+        function getLines() {
+            var object, geometry, material;
+
+            geometry = new THREE.Geometry();
+            material = new THREE.LineDashedMaterial({
+                color: options.colors.lines,
+                dashSize: 1,
+                gapSize: 0.5,
+            });
+            material = new THREE.LineBasicMaterial({
+                color: options.colors.lines
+            });
+            object = new THREE.Line(geometry, material);
+
+            function add() {
+                scene.add(object);
+            }
+
+            function remove() {
+                scene.remove(object);
+            }
+
+            function update() {
+
+            }
+            return {
+                add: add,
+                remove: remove,
+                update: update,
+                object: object,
+            };
+
+        }
+        */
+
     }]);
 
 }());
