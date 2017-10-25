@@ -131,22 +131,10 @@
         options.noiseMap = getPerlinNoise(options.rows, options.rows);
 
         function onChange(params) {
-            // renderer.setClearColor(options.colors.background, 1);
+            renderer.setClearColor(options.colors.background, 1);
             if (audio) {
                 audio.volume = options.audioVolume;
             }
-            var backgroundColor = new THREE.Color(options.colors.background).getHexString();
-            console.log('backgroundColor', backgroundColor);
-            document.body.style.backgroundColor = '#' + backgroundColor;
-            if (OBJECTS.ribbon) {
-                OBJECTS.ribbon.setMaterial();
-            }
-            angular.forEach(OBJECTS.circles, function(circle) {
-                if (circle) {
-                    circle.material.color.setHex(options.colors.lines);
-                }
-            });
-            /*
             if (OBJECTS.circles) {
                 OBJECTS.circles.material.color.setHex(options.colors.lines);
                 if (options.display === '0') {
@@ -155,7 +143,6 @@
                     OBJECTS.circles.remove();
                 }
             }
-            */
             if (OBJECTS.lines) {
                 OBJECTS.lines.material.color.setHex(options.colors.lines);
                 if (options.display === '1') {
@@ -243,247 +230,10 @@
             v.z += (level - v.z) / (3 + 3 * Math.max(0.000001, 1 - drc));
         }
 
-        function getObjectTube() {
-            var options = {
-                path: spline,
-                tubularSegments: 500,
-                radius: 1,
-                radiusSegments: 2,
-                closed: true,
-            }
-            var spline = new THREE.CatmullRomCurve3([
-                new THREE.Vector3(-400, -400, 0),
-                new THREE.Vector3(400, -400, 0),
-                new THREE.Vector3(1400, -400, 0),
-                new THREE.Vector3(400, 400, 0),
-                new THREE.Vector3(-400, 400, 0)
-            ]);
-            spline.type = 'catmullrom';
-            spline.closed = true;
-
-            var object = new THREE.Object3D();
-            scene.add(object);
-
-            var material = new THREE.MeshLambertMaterial({
-                color: 0xffffff
-            });
-            var geometry = new THREE.TubeBufferGeometry(spline, options.tubularSegments, options.radius, options.radiusSegments, options.closed);
-            var group = new THREE.Mesh(geometry, material);
-            object.add(group);
-
-            // if (group !== undefined) {
-            //     object.remove(group);
-            //     group.children[0].geometry.dispose();
-            //     group.children[1].geometry.dispose();
-            // }            
-
-            /*
-            var geometry = new THREE.Geometry();
-            geometry.vertices = spline.getPoints(500);
-            var line = new MeshLine();
-            line.setGeometry(geometry);
-            // line.setGeometry( geometry, function( p ) { return 2; } ); // makes width 2 * lineWidth
-            // line.setGeometry( geometry, function( p ) { return 1 - p; } ); // makes width taper
-            // line.setGeometry( geometry, function( p ) { return 2 + Math.sin( 50 * p ); } ); // makes width sinusoidal
-            var material = new MeshLineMaterial({
-                color: new THREE.Color(0xffffff),
-                lineWidth: 4,
-            });
-            var mesh = new THREE.Mesh(line.geometry, material);
-            object.add(mesh);
-            */
-
-            function add() {
-                console.log('OBJECTS.tube.add');
-                scene.add(object);
-            }
-
-            function remove() {
-                console.log('OBJECTS.tube.remove');
-                scene.remove(object);
-            }
-
-            var d = 0; // iterator
-            var a = new THREE.Vector3(); // normal
-            var b = new THREE.Vector3(); // binormal
-
-            function update() {
-                var duration = 20 * 1000;
-                var scale = 1;
-                var offset = 15;
-                var lookAhead = true;
-                var msec = Date.now();
-                var pow = (msec % duration) / duration;
-                var dir = spline.getTangentAt(pow);
-                var tangents = geometry.tangents;
-                var binormals = geometry.binormals;
-                var x = pow * tangents.length;
-                var c = Math.floor(x);
-                var n = (c + 1) % tangents.length;
-                b.subVectors(binormals[n], binormals[c]);
-                b.multiplyScalar(x - c).add(binormals[c]);
-                a.copy(b).cross(dir);
-                var p = spline.getPointAt(pow);
-                p.multiplyScalar(scale);
-                p.add(a.clone().multiplyScalar(offset));
-                camera.position.copy(p);
-                var lookAt;
-                if (lookAhead) {
-                    // using arclength for stablization in look ahead
-                    lookAt = spline.getPointAt((pow + 30 / spline.getLength()) % 1).multiplyScalar(scale);
-                } else {
-                    // camera orientation 2 - up orientation via normal
-                    lookAt = new THREE.Vector3().copy(p).add(dir);
-                }
-                camera.matrix.lookAt(camera.position, lookAt, a);
-                camera.rotation.setFromRotationMatrix(camera.matrix, camera.rotation.order);
-                d++;
-            }
-
-            return {
-                object: object,
-                spline: spline,
-                geometry: geometry,
-                add: add,
-                remove: remove,
-                update: update,
-            };
-        }
-
-        function getRandomRange(min, max, allowNegatives) {
-            var n = -1 + Math.random() * 2;
-            var a = Math.abs(n);
-            var s = allowNegatives ? Math.floor(n / a) : 1;
-            return s * (min + (max - min) * a);
-        }
-
-        function getObjectRibbon() {
-            var material = getMaterial();
-
-            /*
-            var points = [
-                new THREE.Vector3(-2000, 0, -2000),
-                new THREE.Vector3(2000, 0, -2000),
-                new THREE.Vector3(4000, 0, -2000),
-                new THREE.Vector3(2000, 0, 2000),
-                new THREE.Vector3(-2000, 0, 2000)
-            ];
-            */
-
-            var prev = new THREE.Vector3();
-            var points = new Array(12).fill(null).map(function() {
-                var p = new THREE.Vector3().copy(prev);
-                prev.x += getRandomRange(500, 1000, true);
-                prev.y += getRandomRange(50, 100, true);
-                prev.z += getRandomRange(1000, 2000, false);
-                return p;
-            });
-
-            var spline = new THREE.CatmullRomCurve3(points);
-            spline.type = 'catmullrom';
-            // spline.closed = true;
-
-            var cameraHeight = 30;
-            var cameraSpline = new THREE.CatmullRomCurve3(spline.points.map(function(p) {
-                return new THREE.Vector3(p.x, p.y + cameraHeight, p.z);
-            }));
-            cameraSpline.type = 'catmullrom';
-            // cameraSpline.closed = true;
-
-            var targetHeight = 15;
-            var targetSpline = new THREE.CatmullRomCurve3(spline.points.map(function(p) {
-                return new THREE.Vector3(p.x, p.y + targetHeight, p.z);
-            }));
-            targetSpline.type = 'catmullrom';
-            // targetSpline.closed = true;
-
-            var geometry = new THREE.Geometry();
-            geometry.vertices = spline.getPoints(1200);
-
-            var line = new MeshLine();
-            line.setGeometry(geometry);
-            // line.setGeometry( geometry, function( p ) { return 2; } ); // makes width 2 * lineWidth
-            // line.setGeometry( geometry, function( p ) { return 1 - p; } ); // makes width taper
-            // line.setGeometry( geometry, function( p ) { return 2 + Math.sin( 50 * p ); } ); // makes width sinusoidal
-
-            var object = new THREE.Mesh(line.geometry, material);
-            // var object = new THREE.Object3D();
-            // object.add(mesh);
-            scene.add(object);
-
-            function add() {
-                console.log('OBJECTS.ribbon.add');
-                scene.add(object);
-            }
-
-            function remove() {
-                console.log('OBJECTS.ribbon.remove');
-                scene.remove(object);
-            }
-
-            camera.target = camera.target || new THREE.Vector3(0, 0, 0);
-
-            function update() {
-                var c = (1 / stepper.steps.length) / 10;
-                var cpow = stepper.pow;
-                var tpow = (cpow + c).mod(1);
-
-                var position = cameraSpline.getPointAt(cpow);
-                var target = targetSpline.getPointAt(tpow);
-
-                camera.position.copy(position);
-                camera.target.copy(target);
-                camera.lookAt(camera.target);
-            }
-
-            function getMaterial() {
-                var resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
-                return new MeshLineMaterial({
-                    color: new THREE.Color(options.colors.lines),
-                    lineWidth: 4,
-                    opacity: 1,
-                    resolution: resolution,
-                    sizeAttenuation: 1,
-                    near: 1,
-                    far: 1000,
-                    depthTest: false,
-                    blending: THREE.AdditiveBlending,
-                    transparent: false,
-                    side: THREE.DoubleSide,
-                });
-            }
-
-            function setMaterial() {
-                // !!! non va bene
-                OBJECTS.ribbon.material = getMaterial();
-                OBJECTS.ribbon.object.material = OBJECTS.ribbon.material;
-            }
-
-            return {
-                object: object,
-                spline: spline,
-                cameraSpline: cameraSpline,
-                targetSpline: targetSpline,
-                geometry: geometry,
-                material: material,
-                add: add,
-                remove: remove,
-                update: update,
-                setMaterial: setMaterial,
-            };
-        }
-
-        function getObjectCircles(index) {
+        function getObjectCircles() {
             var geometry, material, object, circles = [];
 
             object = new THREE.Object3D();
-
-            geometry = new THREE.IcosahedronGeometry(90, 3); // radius, detail
-            material = new THREE.MeshBasicMaterial({
-                color: 0xffff00,
-            });
-            var sphere = new THREE.Mesh(geometry, material);
-            object.add(sphere);
 
             material = new THREE.LineBasicMaterial({
                 color: options.colors.lines
@@ -604,12 +354,8 @@
                 });
                 object.scale.x = object.scale.y = object.scale.z = 0.001 + 0.3 * state.pow;
                 object.lookAt(camera.position);
-                // d++;
+                d++;
             }
-
-            var position = OBJECTS.ribbon.cameraSpline.getPointAt((index + 0.5) / stepper.steps.length);
-
-            object.position.copy(position);
 
             return {
                 add: add,
@@ -762,11 +508,9 @@
         }
 
         function createObjects() {
-            // OBJECTS.tube = getObjectTube();
-            OBJECTS.ribbon = getObjectRibbon();
             OBJECTS.dots = getObjectDots();
             OBJECTS.lines = getObjectLines();
-            OBJECTS.circles = new Array(stepper.steps).fill(null);
+            OBJECTS.circles = getObjectCircles();
             // OBJECTS.notes = getNotes();
         }
 
@@ -800,11 +544,7 @@
             if (analyserData) {
                 analyser.getByteFrequencyData(analyserData);
                 if (options.display === '0') {
-                    angular.forEach(OBJECTS.circles, function(circle) {
-                        if (circle && circle.state.enabled) {
-                            circle.update();
-                        }
-                    });
+                    OBJECTS.circles.update();
                 } else if (options.display === '1') {
                     OBJECTS.lines.update();
                 } else if (options.display === '2') {
@@ -824,12 +564,6 @@
         function render() {
             if (controls) {
                 controls.update();
-            }
-            if (OBJECTS.tube) {
-                OBJECTS.tube.update();
-            }
-            if (OBJECTS.ribbon) {
-                OBJECTS.ribbon.update();
             }
             updateAnalyser();
             renderer.render(scene, camera);
