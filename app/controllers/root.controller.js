@@ -551,11 +551,17 @@
 
         function update() {
             // notes.rotation.z -= 0.0025;
-            // lines.rotation.z -= 0.0025;            
+            // lines.rotation.z -= 0.0025;           
+            /* 
             if (analyserData) {
                 analyser.getByteFrequencyData(analyserData);
             }
+            */
             // OBJECTS.notes.update();
+            if (controls) {
+                controls.update();
+            }
+            sound.update();
             if (options.display === '0') {
                 OBJECTS.circles ? OBJECTS.circles.update() : null;
             } else if (options.display === '1') {
@@ -565,20 +571,16 @@
             }
         }
 
+        function render() {
+            update();
+            renderer.render(scene, camera);
+        }
+
         function loop() {
             stats.begin();
             render();
             stats.end();
             requestAnimationFrame(loop);
-        }
-
-        function render() {
-            if (controls) {
-                controls.update();
-            }
-            sound.update();
-            update();
-            renderer.render(scene, camera);
         }
 
         createScene();
