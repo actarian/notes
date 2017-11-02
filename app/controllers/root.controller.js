@@ -5,7 +5,12 @@
 
     var app = angular.module('app');
 
-    app.controller('RootCtrl', ['$scope', function($scope) {
+    app.controller('RootCtrl', ['$scope', 'AudioSound', function($scope, AudioSound) {
+
+        var sound = new AudioSound('audio/07-rossini-192.mp3', {
+            loop: true,
+            analyser: true,
+        });
 
         var OBJECTS = {};
 
@@ -223,7 +228,8 @@
             var dc = 1 - (Math.abs(c - rows / 2) / (rows / 2));
             var drc = (dr + dc) / 2;
             var index = b % options.bands;
-            var pow = analyserData[index];
+            // var pow = analyserData[index];
+            var pow = sound.data[index];
             var scale = (pow / options.bands) * dr * 2;
             var ni = r * rows + ((c + d) % rows);
             var level = (options.noiseMap[ni] / 64 * noiseStrength) * drc + (audioStrength * scale);
@@ -330,7 +336,9 @@
                     var dc = 1 - (Math.abs(c - rows / 2) / (rows / 2));
                     var drc = (dr + dc) / 2;
                     var ai = r % options.bands;
-                    var pow = (analyserData[ai] + analyserData[rows - 1 - ai]) / 2;
+
+                    var pow = (sound.data[ai] + sound.data[rows - 1 - ai]) / 2;
+                    // var pow = (analyserData[ai] + analyserData[rows - 1 - ai]) / 2;
                     var scale = pow / options.bands;
                     var na = c * rows + ((r + d) % rows);
                     var noise = options.noiseMap[na];
@@ -514,6 +522,7 @@
             // OBJECTS.notes = getNotes();
         }
 
+        /*
         function createAnalyser() {
             var source, ctx, actx = (window.AudioContext || window.webkitAudioContext);
             source = null;
@@ -538,19 +547,21 @@
             return audio.play();
         }
 
-        function updateAnalyser() {
+*/
+
+        function update() {
             // notes.rotation.z -= 0.0025;
             // lines.rotation.z -= 0.0025;            
             if (analyserData) {
                 analyser.getByteFrequencyData(analyserData);
-                if (options.display === '0') {
-                    OBJECTS.circles.update();
-                } else if (options.display === '1') {
-                    OBJECTS.lines.update();
-                } else if (options.display === '2') {
-                    OBJECTS.dots.update();
-                }
-                // OBJECTS.notes.update();
+            }
+            // OBJECTS.notes.update();
+            if (options.display === '0') {
+                OBJECTS.circles ? OBJECTS.circles.update() : null;
+            } else if (options.display === '1') {
+                OBJECTS.lines ? OBJECTS.lines.update() : null;
+            } else if (options.display === '2') {
+                OBJECTS.dots ? OBJECTS.dots.update() : null;
             }
         }
 
@@ -565,17 +576,19 @@
             if (controls) {
                 controls.update();
             }
-            updateAnalyser();
+            sound.update();
+            update();
             renderer.render(scene, camera);
         }
 
         createScene();
         // createLights();
         createObjects();
-        createAnalyser();
+        // createAnalyser();
         addGui();
         onChange();
         loop();
+        sound.play();
 
         function addGui() {
             gui = new dat.GUI();

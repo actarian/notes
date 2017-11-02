@@ -53,7 +53,12 @@
 
     var app = angular.module('app');
 
-    app.controller('RootCtrl', ['$scope', function($scope) {
+    app.controller('RootCtrl', ['$scope', 'AudioSound', function($scope, AudioSound) {
+
+        var sound = new AudioSound('audio/07-rossini-192.mp3', {
+            loop: true,
+            analyser: true,
+        });
 
         var OBJECTS = {};
 
@@ -271,7 +276,8 @@
             var dc = 1 - (Math.abs(c - rows / 2) / (rows / 2));
             var drc = (dr + dc) / 2;
             var index = b % options.bands;
-            var pow = analyserData[index];
+            // var pow = analyserData[index];
+            var pow = sound.data[index];
             var scale = (pow / options.bands) * dr * 2;
             var ni = r * rows + ((c + d) % rows);
             var level = (options.noiseMap[ni] / 64 * noiseStrength) * drc + (audioStrength * scale);
@@ -378,7 +384,9 @@
                     var dc = 1 - (Math.abs(c - rows / 2) / (rows / 2));
                     var drc = (dr + dc) / 2;
                     var ai = r % options.bands;
-                    var pow = (analyserData[ai] + analyserData[rows - 1 - ai]) / 2;
+
+                    var pow = (sound.data[ai] + sound.data[rows - 1 - ai]) / 2;
+                    // var pow = (analyserData[ai] + analyserData[rows - 1 - ai]) / 2;
                     var scale = pow / options.bands;
                     var na = c * rows + ((r + d) % rows);
                     var noise = options.noiseMap[na];
@@ -562,6 +570,7 @@
             // OBJECTS.notes = getNotes();
         }
 
+        /*
         function createAnalyser() {
             var source, ctx, actx = (window.AudioContext || window.webkitAudioContext);
             source = null;
@@ -586,19 +595,21 @@
             return audio.play();
         }
 
-        function updateAnalyser() {
+*/
+
+        function update() {
             // notes.rotation.z -= 0.0025;
             // lines.rotation.z -= 0.0025;            
             if (analyserData) {
                 analyser.getByteFrequencyData(analyserData);
-                if (options.display === '0') {
-                    OBJECTS.circles.update();
-                } else if (options.display === '1') {
-                    OBJECTS.lines.update();
-                } else if (options.display === '2') {
-                    OBJECTS.dots.update();
-                }
-                // OBJECTS.notes.update();
+            }
+            // OBJECTS.notes.update();
+            if (options.display === '0') {
+                OBJECTS.circles ? OBJECTS.circles.update() : null;
+            } else if (options.display === '1') {
+                OBJECTS.lines ? OBJECTS.lines.update() : null;
+            } else if (options.display === '2') {
+                OBJECTS.dots ? OBJECTS.dots.update() : null;
             }
         }
 
@@ -613,17 +624,19 @@
             if (controls) {
                 controls.update();
             }
-            updateAnalyser();
+            sound.update();
+            update();
             renderer.render(scene, camera);
         }
 
         createScene();
         // createLights();
         createObjects();
-        createAnalyser();
+        // createAnalyser();
         addGui();
         onChange();
         loop();
+        sound.play();
 
         function addGui() {
             gui = new dat.GUI();
@@ -942,6 +955,155 @@
         }
         */
 
+    }]);
+
+}());
+/* global angular */
+
+(function() {
+    "use strict";
+
+    var app = angular.module('app');
+
+    app.factory('AudioSound', ['$q', function($q) {
+
+        function AudioSound(path, options) {
+            var defaultOptions = {
+                volume: 85,
+                loop: false,
+            };
+            if (options) {
+                angular.extend(defaultOptions, options);
+            }
+            // var manager = AudioManager.getInstance();
+            var sound = this;
+            sound.path = path;
+            sound.options = defaultOptions;
+            // sound.manager = manager;
+            sound.setVolume(defaultOptions.volume);
+            // manager.add(sound);
+            if (sound.options.analyser) {
+                var analyser = ctx.createAnalyser();
+                analyser.fftSize = 256 * 2;
+                sound.data = new Uint8Array(analyser.frequencyBinCount);
+                sound.analyser = analyser;
+            }
+        }
+
+        var _AudioContext = window.AudioContext || window.webkitAudioContext;
+        var ctx = new _AudioContext();
+        var buffers = {};
+
+        AudioSound.translateVolume = function(volume, inverse) {
+            return inverse ? volume * 100 : volume / 100;
+        };
+
+        AudioSound.load = function(sound) {
+            var deferred = $q.defer();
+            var path = sound.path;
+            var xhr = new XMLHttpRequest();
+            xhr.responseType = "arraybuffer";
+            xhr.open("GET", path, true);
+            xhr.onload = function() {
+                // Asynchronously decode the audio file data in xhr.response
+                ctx.decodeAudioData(xhr.response, function(buffer) {
+                    if (!buffer) {
+                        console.log('AudioSound.load.decodeAudioData.error', path);
+                        deferred.reject('AudioSound.load.decodeAudioData.error');
+                        return;
+                    }
+                    console.log('AudioSound.decodeAudioData', path);
+                    buffers[path] = buffer;
+                    deferred.resolve(buffer);
+                });
+            };
+            xhr.onerror = function(error) {
+                console.log('AudioManager.xhr.onerror', error);
+                deferred.reject(error);
+            };
+            xhr.send();
+            return deferred.promise;
+        };
+
+        AudioSound.prototype = {
+            getBuffer: function() {
+                var deferred = $q.defer();
+                var path = this.path;
+                var buffer = buffers[path];
+                if (buffer) {
+                    deferred.resolve(buffer);
+                } else {
+                    AudioSound.load(this).then(function(buffer) {
+                        deferred.resolve(buffer);
+                    }, function(error) {
+                        deferred.reject(error);
+                    });
+                }
+                return deferred.promise;
+            },
+            getSource: function() {
+                var deferred = $q.defer();
+                var source = this.source;
+                if (source) {
+                    deferred.resolve(source);
+                } else {
+                    var sound = this;
+                    this.getBuffer().then(function(buffer) {
+                        var source = ctx.createBufferSource();
+                        var gainNode = ctx.createGain ? ctx.createGain() : ctx.createGainNode();
+                        gainNode.gain.value = sound.volume;
+                        source.buffer = buffer;
+                        source.connect(gainNode);
+                        if (sound.analyser) {
+                            source.connect(sound.analyser);
+                            // source.connect(ctx.destination);
+                        }
+                        gainNode.connect(ctx.destination);
+                        deferred.resolve(source);
+                    }, function(error) {
+                        deferred.reject(error);
+                    });
+                }
+                return deferred.promise;
+            },
+            play: function() {
+                var options = this.options;
+                this.getSource().then(function(source) {
+                    source.loop = options.loop;
+                    if (source.start) {
+                        source.start(0); // (0, 2, 1);
+                    } else {
+                        source.noteOn(0); // (0, 2, 1);
+                    }
+                });
+                console.log('AudioSound.play');
+            },
+            stop: function() {
+                this.getSource().then(function(source) {
+                    if (source.stop) {
+                        source.stop(0); // (0, 2, 1);
+                    } else {
+                        source.noteOff(0); // (0, 2, 1);
+                    }
+                });
+                console.log('AudioSound.stop');
+            },
+            getVolume: function() {
+                return AudioSound.translateVolume(this.volume, true);
+            },
+            // Expect to receive in range 0-100
+            setVolume: function(volume) {
+                this.volume = AudioSound.translateVolume(volume);
+            },
+            update: function() {
+                var sound = this;
+                if (sound.analyser) {
+                    sound.analyser.getByteFrequencyData(sound.data);
+                }
+            }
+        };
+
+        return AudioSound;
     }]);
 
 }());

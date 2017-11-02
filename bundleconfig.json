@@ -29,7 +29,8 @@
             "app/app.config.js",
             "app/app.routes.js",
             "app/app.run.js",
-            "app/controllers/root.controller.js"
+            "app/controllers/root.controller.js",
+            "app/services/analyser.service.js"
         ],
         "outputFileName": "docs/js/app.js",
         "minify": {
